@@ -1,0 +1,457 @@
+<Window x:Class="SvnFloatingAssistant.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:converters="clr-namespace:SvnFloatingAssistant.Converters"
+        Title="SVN Overlay"
+        Width="260"
+        Height="420"
+        MinWidth="200"
+        MaxWidth="400"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ResizeMode="NoResize"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Visibility="Visible"
+        Loaded="Window_Loaded">
+
+    <Window.Resources>
+        <!-- 转换器 -->
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisConverter" />
+        <converters:InvertBoolToVisibilityConverter x:Key="InvertBoolToVisConverter" />
+        <converters:StringToVisibilityConverter x:Key="StringToVisConverter" />
+
+        <!-- 阴影 -->
+        <DropShadowEffect x:Key="Shadow" BlurRadius="18" ShadowDepth="4" Opacity="0.3" Direction="270" />
+
+        <!-- 颜色刷 -->
+        <SolidColorBrush x:Key="BlueBg" Color="#185FA5" />
+        <SolidColorBrush x:Key="DarkBlueBg" Color="#0C447C" />
+        <SolidColorBrush x:Key="LightBlueBg" Color="#E6F1FB" />
+        <SolidColorBrush x:Key="WhiteBg" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="GrayBg" Color="#F5F5F5" />
+        <SolidColorBrush x:Key="GreenText" Color="#3B6D11" />
+        <SolidColorBrush x:Key="RedText" Color="#A32D2D" />
+        <SolidColorBrush x:Key="NormalText" Color="#333333" />
+        <SolidColorBrush x:Key="MutedText" Color="#888888" />
+        <SolidColorBrush x:Key="BorderColor" Color="#CCCCCC" />
+
+        <!-- 按钮基础样式 -->
+        <Style x:Key="ToolButton" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="4">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="11"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#50FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 操作按钮样式 -->
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="4,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="#333333" />
+            <Setter Property="Background" Value="#EEF2F6" />
+            <Setter Property="BorderBrush" Value="#CED6E0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="8,0">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="12"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#DEE2E8" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 主要操作按钮（蓝色） -->
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="#185FA5" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderBrush" Value="#185FA5" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1478C0" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <!-- 主容器 -->
+    <Border CornerRadius="8"
+            Background="#FFFFFF"
+            ClipToBounds="True"
+            Effect="{StaticResource Shadow}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />  <!-- 标题栏 -->
+                <RowDefinition Height="Auto" />  <!-- 版本栏 -->
+                <RowDefinition Height="*" />     <!-- 日志区 -->
+                <RowDefinition Height="Auto" />  <!-- 底部操作栏 -->
+                <RowDefinition Height="Auto" />  <!-- 状态栏 -->
+            </Grid.RowDefinitions>
+
+            <!-- ═══ 1. 标题栏 ═══ -->
+            <Border Grid.Row="0"
+                    Height="38"
+                    Background="{StaticResource BlueBg}"
+                    MouseLeftButtonDown="TitleBar_MouseDown">
+                <Grid Margin="11,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：项目名 -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ProjectName}"
+                                   FontSize="13"
+                                   FontWeight="SemiBold"
+                                   Foreground="White"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="140" />
+                        <TextBlock Text="{Binding BranchPath}"
+                                   FontSize="10"
+                                   Foreground="#B0D0F0"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="140"
+                                   Visibility="{Binding BranchPath, Converter={StaticResource StringToVisConverter}}" />
+                    </StackPanel>
+
+                    <!-- 右侧：控制按钮 -->
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal">
+                        <Button Content="⟳" Style="{StaticResource ToolButton}" Click="RefreshMenu_Click" />
+                        <Button x:Name="PinButton" Content="📌" Style="{StaticResource ToolButton}" Click="PinButton_Click" />
+                        <Button Content="🗕" Style="{StaticResource ToolButton}" Click="MinimizeButton_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ═══ 2. 版本栏 ═══ -->
+            <Border Grid.Row="1" Height="48" Background="White">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="1" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 本地版本 -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding LocalRevision}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource BlueBg}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="当前版本"
+                                   FontSize="10"
+                                   Foreground="{StaticResource MutedText}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- 分割线 -->
+                    <Border Grid.Column="1" Background="{StaticResource BorderColor}" />
+
+                    <!-- 远程版本 -->
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding RemoteRevision}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource NormalText}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="仓库最新"
+                                   FontSize="10"
+                                   Foreground="{StaticResource MutedText}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- 分割线 -->
+                    <Border Grid.Column="3" Background="{StaticResource BorderColor}" />
+
+                    <!-- 落后版本 -->
+                    <StackPanel Grid.Column="4" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding BehindText}"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding BehindColor}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="待更新"
+                                   FontSize="10"
+                                   Foreground="{StaticResource MutedText}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 版本栏底部细线 -->
+            <Border Grid.Row="1"
+                    Height="1"
+                    VerticalAlignment="Bottom"
+                    Background="{StaticResource BorderColor}" />
+
+            <!-- ═══ 3. 日志区 ═══ -->
+            <Grid Grid.Row="2">
+                <!-- 非SVN提示 -->
+                <Border Visibility="{Binding IsNotSvn, Converter={StaticResource BoolToVisConverter}}"
+                        Background="White">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="📁"
+                                   FontSize="32"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="此目录不是 SVN 工作副本"
+                                   FontSize="12"
+                                   Foreground="{StaticResource MutedText}"
+                                   Margin="0,12,0,4"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="浏览至含 .svn 的目录后自动更新"
+                                   FontSize="10"
+                                   Foreground="{StaticResource MutedText}"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 日志列表 -->
+                <ListView x:Name="LogListView"
+                          ItemsSource="{Binding Logs}"
+                          Background="White"
+                          BorderThickness="0"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.ScrollChanged="LogScrollViewer_ScrollChanged"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          Visibility="{Binding IsNotSvn, Converter={StaticResource InvertBoolToVisConverter}}">
+                    <ListView.Resources>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="White" />
+                    </ListView.Resources>
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Background" Value="{Binding RowBackground}" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListViewItem">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderThickness="0"
+                                                Padding="12,8">
+                                            <ContentPresenter />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <!-- 第一行：版本号徽章 + 作者 + 时间 -->
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- 版本号徽章 -->
+                                    <Border Grid.Column="0"
+                                            Background="{Binding RevisionBadgeBg}"
+                                            CornerRadius="3"
+                                            Padding="5,2,5,2"
+                                            Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding RevisionBadge}"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding RevisionBadgeText}" />
+                                    </Border>
+
+                                    <!-- 作者 -->
+                                    <TextBlock Grid.Column="1"
+                                               Text="{Binding AuthorDisplay}"
+                                               FontSize="11"
+                                               Foreground="{Binding AuthorColor}"
+                                               FontWeight="{Binding AuthorWeight}" />
+
+                                    <!-- 时间 -->
+                                    <TextBlock Grid.Column="3"
+                                               Text="{Binding TimeDisplay}"
+                                               FontSize="10"
+                                               Foreground="{StaticResource MutedText}"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+
+                                <!-- 第二行：提交消息 -->
+                                <TextBlock Grid.Row="1"
+                                           Text="{Binding MessageDisplay}"
+                                           FontSize="12"
+                                           Foreground="{StaticResource NormalText}"
+                                           TextWrapping="Wrap"
+                                           MaxHeight="36"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="0,3,0,0"
+                                           LineHeight="18"
+                                           LineStackingStrategy="BlockLineHeight" />
+
+                                <!-- 第三行：变更文件数 -->
+                                <TextBlock Grid.Row="2"
+                                           Text="{Binding FilesChangedText}"
+                                           FontSize="10"
+                                           Foreground="{StaticResource MutedText}"
+                                           Margin="0,2,0,0"
+                                           Visibility="{Binding HasFilesChanged, Converter={StaticResource BoolToVisConverter}}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <!-- 加载转圈 -->
+                <Border Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisConverter}}"
+                        Background="#80FFFFFF">
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <TextBlock Text="⟳"
+                                   FontSize="28"
+                                   Foreground="{StaticResource BlueBg}"
+                                   HorizontalAlignment="Center"
+                                   RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.RenderTransform>
+                                <RotateTransform x:Name="LoadingSpinner" Angle="0" />
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                        <TextBlock Text="正在刷新..."
+                                   FontSize="11"
+                                   Foreground="{StaticResource MutedText}"
+                                   Margin="0,8,0,0"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- 日志区底部细线 -->
+            <Border Grid.Row="2"
+                    Height="1"
+                    VerticalAlignment="Bottom"
+                    Background="{StaticResource BorderColor}" />
+
+            <!-- ═══ 4. 底部操作栏 ═══ -->
+            <Border Grid.Row="3"
+                    Height="38"
+                    Background="White"
+                    Padding="8,4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0"
+                            Style="{StaticResource PrimaryButton}"
+                            Content="SVN 更新"
+                            Click="UpdateMenu_Click" />
+                    <Button Grid.Column="1"
+                            Style="{StaticResource ActionButton}"
+                            Content="提交"
+                            Click="CommitMenu_Click" />
+                    <Button Grid.Column="2"
+                            Style="{StaticResource ActionButton}"
+                            Content="日志"
+                            Click="OpenLogMenu_Click" />
+                </Grid>
+            </Border>
+
+            <!-- ═══ 5. 状态栏 ═══ -->
+            <Border Grid.Row="4"
+                    Height="22"
+                    Background="{StaticResource GrayBg}"
+                    Padding="12,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 状态圆点 -->
+                    <Ellipse Grid.Column="0"
+                             Width="6"
+                             Height="6"
+                             Fill="{Binding StatusColor}"
+                             VerticalAlignment="Center"
+                             Margin="0,0,6,0" />
+
+                    <!-- 状态文字 -->
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding StatusText}"
+                               FontSize="10"
+                               Foreground="{Binding StatusColor}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+
+                    <!-- 刷新时间 -->
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding RefreshTime}"
+                               FontSize="10"
+                               Foreground="{StaticResource MutedText}"
+                               VerticalAlignment="Center"
+                               Cursor="Hand"
+                               MouseLeftButtonUp="RefreshTime_Click" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>

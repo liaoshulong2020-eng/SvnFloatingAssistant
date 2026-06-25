@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+publish/
+SvnFloatingAssistant/bin/
+SvnFloatingAssistant/obj/
+SvnFloatingAssistant/publish/
+# 根目录编译产物
+*.exe
+*.dll
+*.deps.json
+*.runtimeconfig.json
+*.pdb
+# 设计文档（太大不需要版本控制）
+*.docx
