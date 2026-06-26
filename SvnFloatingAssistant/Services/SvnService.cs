@@ -373,7 +373,7 @@ public sealed class SvnService
                 {
                     var revision = entry.Attribute("revision")?.Value ?? "?";
                     var author = entry.Element("author")?.Value ?? "";
-                    var message = FirstLine(entry.Element("msg")?.Value);
+                    var message = entry.Element("msg")?.Value?.Trim() ?? "(无提交说明)";
                     DateTimeOffset? date = null;
                     if (DateTimeOffset.TryParse(entry.Element("date")?.Value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
                     {

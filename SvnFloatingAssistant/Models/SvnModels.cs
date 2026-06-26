@@ -61,6 +61,17 @@ public sealed record SvnLogEntry(
     IReadOnlyList<string>? ChangedFiles = null)
 {
     public int RevisionNumber => int.TryParse(Revision, out var n) ? n : 0;
+
+    /// <summary>提交消息的第一行，用于列表缩略显示。</summary>
+    public string ShortMessage
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Message)) return "(无提交说明)";
+            var firstLine = Message.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)[0].Trim();
+            return string.IsNullOrWhiteSpace(firstLine) ? "(无提交说明)" : firstLine;
+        }
+    }
 }
 
 public sealed record SvnSnapshot(

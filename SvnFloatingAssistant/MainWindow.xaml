@@ -264,6 +264,7 @@
                           Background="White"
                           BorderThickness="0"
                           ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          ScrollViewer.CanContentScroll="False"
                           ScrollViewer.ScrollChanged="LogScrollViewer_ScrollChanged"
                           VirtualizingPanel.VirtualizationMode="Recycling"
                           Visibility="{Binding IsNotSvn, Converter={StaticResource InvertBoolToVisConverter}}">
@@ -335,20 +336,17 @@
                                                VerticalAlignment="Center" />
                                 </Grid>
 
-                                <!-- 第二行：提交消息 -->
+                                <!-- 第二行：完整提交消息 -->
                                 <TextBlock Grid.Row="1"
                                            Text="{Binding MessageDisplay}"
-                                           FontSize="12"
+                                           FontSize="11"
                                            Foreground="{StaticResource NormalText}"
                                            TextWrapping="Wrap"
-                                           MaxHeight="36"
-                                           TextTrimming="CharacterEllipsis"
-                                           Margin="0,3,0,0"
-                                           LineHeight="18"
-                                           LineStackingStrategy="BlockLineHeight" />
+                                           TextTrimming="None"
+                                           Margin="0,3,0,0" />
 
                                 <!-- 第三行：变更文件数 -->
-                                <TextBlock Grid.Row="2"
+                                <TextBlock Grid.Row="3"
                                            Text="{Binding FilesChangedText}"
                                            FontSize="10"
                                            Foreground="{StaticResource MutedText}"

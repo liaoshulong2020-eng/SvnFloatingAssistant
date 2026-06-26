@@ -216,15 +216,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 }
 
-public sealed class LogEntryViewModel
+public sealed class LogEntryViewModel : INotifyPropertyChanged
 {
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public SvnLogEntry Entry { get; }
     public bool IsOwnCommit { get; }
     public bool IsCurrentRevision { get; }
     public string RevisionBadge { get; }
     public string AuthorDisplay { get; }
     public string TimeDisplay { get; }
-    public string MessageDisplay { get; }
+    public string FullMessage { get; }
     public string FilesChangedText { get; }
     public Brush RowBackground { get; }
     public Brush RevisionBadgeBg { get; }
@@ -232,6 +234,9 @@ public sealed class LogEntryViewModel
     public Brush AuthorColor { get; }
     public FontWeight AuthorWeight { get; }
     public bool HasFilesChanged { get; }
+
+    /// <summary>始终显示完整提交消息。</summary>
+    public string MessageDisplay => FullMessage;
 
     public LogEntryViewModel(SvnLogEntry entry, bool isOwnCommit, int? currentRevision)
     {
@@ -241,7 +246,7 @@ public sealed class LogEntryViewModel
 
         RevisionBadge = $"r{entry.Revision}";
         AuthorDisplay = string.IsNullOrWhiteSpace(entry.Author) ? "(未知)" : entry.Author;
-        MessageDisplay = string.IsNullOrWhiteSpace(entry.Message) ? "(无提交说明)" : entry.Message;
+        FullMessage = string.IsNullOrWhiteSpace(entry.Message) ? "(无提交说明)" : entry.Message;
         HasFilesChanged = entry.ChangedFiles?.Count > 0;
         FilesChangedText = HasFilesChanged ? $"变更 {entry.ChangedFiles!.Count} 个文件" : "";
 

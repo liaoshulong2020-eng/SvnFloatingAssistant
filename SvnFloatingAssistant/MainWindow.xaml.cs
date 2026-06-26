@@ -285,6 +285,7 @@ public partial class MainWindow : Window
         RefreshMenu_Click(sender, e);
     }
 
+
     /// <summary>
     /// 显示/隐藏窗口（通过透明度而非 WPF Hide/Show，避免 HWND 销毁）。
     /// 显示时不激活窗口，防止抢 Explorer 焦点。
