@@ -37,7 +37,7 @@ public sealed class ExplorerPathMonitor
             {
                 try
                 {
-                    if ((IntPtr)(int)window.HWND != foreground) continue;
+                    if (new IntPtr(Convert.ToInt64(window.HWND)) != foreground) continue;
 
                     string currentPath = "";
                     try
@@ -47,7 +47,7 @@ public sealed class ExplorerPathMonitor
                     }
                     catch { }
 
-                    // 尝试获取选中文件夹（预览功能）
+                    // 优先获取单个选中项，用选中项自己的 SVN 信息做预览。
                     try
                     {
                         dynamic? document = window.Document;
@@ -61,19 +61,12 @@ public sealed class ExplorerPathMonitor
                                 dynamic? item = selItems.Item(0);
                                 if (item is not null)
                                 {
-                                    bool isFolder = false;
-                                    try { isFolder = item.IsFolder; } catch { }
-                                    if (isFolder)
+                                    string? selPath = null;
+                                    try { selPath = (string)item.Path; } catch { }
+                                    selPath = NormalizeShellPath(selPath);
+                                    if (IsExistingFileSystemPath(selPath))
                                     {
-                                        string? selPath = null;
-                                        try { selPath = (string)item.Path; } catch { }
-                                        if (!string.IsNullOrWhiteSpace(selPath))
-                                        {
-                                            if (selPath.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-                                                selPath = new Uri(selPath).LocalPath;
-                                            if (Directory.Exists(selPath))
-                                                return selPath;
-                                        }
+                                        return selPath;
                                     }
                                 }
                             }
@@ -117,6 +110,20 @@ public sealed class ExplorerPathMonitor
         _ = GetWindowText(hwnd, builder, builder.Capacity);
         return builder.ToString().Trim();
     }
+
+    private static string? NormalizeShellPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        if (path.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+        {
+            try { return new Uri(path).LocalPath; } catch { return null; }
+        }
+
+        return path;
+    }
+
+    private static bool IsExistingFileSystemPath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) && (Directory.Exists(path) || File.Exists(path));
 
     private static string? ConvertFileUrlToPath(string? url)
     {

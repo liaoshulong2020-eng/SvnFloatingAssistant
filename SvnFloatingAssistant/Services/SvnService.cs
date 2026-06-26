@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Text;
 using System.Xml.Linq;
 using SvnFloatingAssistant.Models;
@@ -36,10 +37,16 @@ public sealed class SvnService
 
     public async Task<SvnSnapshot> GetSnapshotAsync(string path, bool includeLogs, CancellationToken cancellationToken)
     {
+        var target = ResolveCommandTarget(path);
+        if (target is null)
+        {
+            return SvnSnapshot.NotWorkingCopy(path);
+        }
+
         if (!IsSvnAvailable)
         {
             return IsTortoiseCompatibilityAvailable
-                ? await GetSubWcRevSnapshotAsync(path, cancellationToken)
+                ? await GetSubWcRevSnapshotAsync(path, target, cancellationToken)
                 : new SvnSnapshot(
                     path,
                     SvnHealth.ToolMissing,
@@ -52,7 +59,7 @@ public sealed class SvnService
         var info = _cache.GetInfo(path);
         if (info is null)
         {
-            var infoResult = await RunProcessAsync(_svnPath!, path, "info --xml", TimeSpan.FromSeconds(1), cancellationToken);
+            var infoResult = await RunProcessAsync(_svnPath!, target.WorkingDirectory, $"info --xml {target.Argument}", TimeSpan.FromSeconds(1), cancellationToken);
             if (infoResult.TimedOut)
             {
                 return Slow(path);
@@ -66,7 +73,7 @@ public sealed class SvnService
             info = ParseInfoFromXml(infoResult.StandardOutput);
 
             // 获取远程 HEAD 版本号
-            var headResult = await RunProcessAsync(_svnPath!, path, "info -r HEAD --xml", TimeSpan.FromSeconds(3), cancellationToken);
+            var headResult = await RunProcessAsync(_svnPath!, target.WorkingDirectory, $"info -r HEAD --xml {target.Argument}", TimeSpan.FromSeconds(3), cancellationToken);
             if (headResult.ExitCode == 0 && !headResult.TimedOut)
             {
                 var headInfo = ParseInfoFromXml(headResult.StandardOutput);
@@ -83,7 +90,7 @@ public sealed class SvnService
         var status = _cache.GetStatus(path);
         if (status is null)
         {
-            var statusResult = await RunProcessAsync(_svnPath!, path, "status", TimeSpan.FromSeconds(3), cancellationToken);
+            var statusResult = await RunProcessAsync(_svnPath!, target.WorkingDirectory, $"status {target.Argument}", TimeSpan.FromSeconds(3), cancellationToken);
             if (statusResult.TimedOut)
             {
                 return Slow(path, info);
@@ -112,7 +119,13 @@ public sealed class SvnService
 
     public async Task<IReadOnlyList<SvnLogEntry>> LoadLogsAsync(string path, int limit = 20, int skip = 0, CancellationToken cancellationToken = default)
     {
-        var logResult = await RunProcessAsync(_svnPath!, path, $"log -l {limit} --xml", TimeSpan.FromSeconds(5), cancellationToken);
+        var target = ResolveCommandTarget(path);
+        if (target is null)
+        {
+            return Array.Empty<SvnLogEntry>();
+        }
+
+        var logResult = await RunProcessAsync(_svnPath!, target.WorkingDirectory, $"log -l {limit} --xml {target.Argument}", TimeSpan.FromSeconds(5), cancellationToken);
         if (logResult.ExitCode != 0 || logResult.TimedOut)
         {
             return Array.Empty<SvnLogEntry>();
@@ -132,9 +145,9 @@ public sealed class SvnService
     private static SvnSnapshot Slow(string path, SvnInfo? info = null) =>
         new(path, SvnHealth.Slow, info, SvnStatusSummary.Empty, Array.Empty<SvnLogEntry>(), "SVN响应慢");
 
-    private async Task<SvnSnapshot> GetSubWcRevSnapshotAsync(string path, CancellationToken cancellationToken)
+    private async Task<SvnSnapshot> GetSubWcRevSnapshotAsync(string path, CommandTarget target, CancellationToken cancellationToken)
     {
-        var result = await RunProcessAsync(_subWcRevPath!, path, $"\"{path}\"", TimeSpan.FromSeconds(2), cancellationToken);
+        var result = await RunProcessAsync(_subWcRevPath!, target.WorkingDirectory, QuoteArgument(target.WorkingDirectory), TimeSpan.FromSeconds(2), cancellationToken);
         if (result.TimedOut)
         {
             return Slow(path);
@@ -157,6 +170,34 @@ public sealed class SvnService
             Array.Empty<SvnLogEntry>(),
             "TortoiseSVN兼容模式");
     }
+
+    private static CommandTarget? ResolveCommandTarget(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        if (Directory.Exists(path))
+        {
+            return new CommandTarget(path, path, QuoteArgument(path));
+        }
+
+        if (File.Exists(path))
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return null;
+            }
+
+            return new CommandTarget(path, directory, QuoteArgument(path));
+        }
+
+        return null;
+    }
+
+    private static string QuoteArgument(string value) => $"\"{value.Replace("\"", "\\\"")}\"";
 
     private async Task<ProcessResult> RunProcessAsync(
         string fileName,
@@ -399,6 +440,8 @@ public sealed class SvnService
 
         return text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)[0].Trim();
     }
+
+    private sealed record CommandTarget(string DisplayPath, string WorkingDirectory, string Argument);
 
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError, bool TimedOut);
 }
