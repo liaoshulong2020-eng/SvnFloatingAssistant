@@ -3,12 +3,19 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Automation;
+using System.Xml.Linq;
 using WpfPoint = System.Windows.Point;
 
 namespace SvnFloatingAssistant.Services;
 
 public sealed class ExplorerPathMonitor
 {
+    private static DateTimeOffset _directoryOpusCacheUpdatedAt = DateTimeOffset.MinValue;
+    private static string? _directoryOpusCachedActivePath;
+    private static string? _directoryOpusCachedSelectedPath;
+    private static bool _directoryOpusCacheRefreshing;
+    private static readonly object DirectoryOpusCacheLock = new();
+
     /// <summary>
     /// 获取当前 Explorer 窗口的路径。
     /// 如果窗口中选中了一个子文件夹，返回该子文件夹路径（预览效果）。
@@ -16,9 +23,9 @@ public sealed class ExplorerPathMonitor
     /// </summary>
     public string? GetCurrentExplorerPath()
     {
-        var explorerWindow = GetExplorerWindowUnderCursor();
+        var explorerWindow = GetFileManagerWindowUnderCursor();
         var fallbackWindow = GetForegroundWindow();
-        if (explorerWindow == IntPtr.Zero && IsExplorerWindow(fallbackWindow))
+        if (explorerWindow == IntPtr.Zero && IsSupportedFileManagerWindow(fallbackWindow))
         {
             explorerWindow = fallbackWindow;
         }
@@ -26,6 +33,18 @@ public sealed class ExplorerPathMonitor
         if (explorerWindow == IntPtr.Zero)
         {
             return fallbackWindow == IntPtr.Zero ? null : GetTitlePath(fallbackWindow);
+        }
+
+        if (TryGetDirectoryOpusPath(explorerWindow) is { } directoryOpusPath)
+        {
+            var selectedPath = GetDirectoryOpusSelectedPath();
+            if (selectedPath is not null)
+            {
+                return selectedPath;
+            }
+
+            var hoveredPath = GetHoveredItemPath(directoryOpusPath, explorerWindow);
+            return hoveredPath ?? directoryOpusPath;
         }
 
         // 通过 Shell COM 获取 Explorer 信息
@@ -94,7 +113,7 @@ public sealed class ExplorerPathMonitor
         return null;
     }
 
-    private static IntPtr GetExplorerWindowUnderCursor()
+    private static IntPtr GetFileManagerWindowUnderCursor()
     {
         if (!GetCursorPos(out var cursor))
         {
@@ -113,10 +132,10 @@ public sealed class ExplorerPathMonitor
             root = window;
         }
 
-        return IsExplorerWindow(root) ? root : IntPtr.Zero;
+        return IsSupportedFileManagerWindow(root) ? root : IntPtr.Zero;
     }
 
-    private static bool IsExplorerWindow(IntPtr hwnd)
+    private static bool IsSupportedFileManagerWindow(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero)
         {
@@ -127,12 +146,184 @@ public sealed class ExplorerPathMonitor
         try
         {
             using var process = Process.GetProcessById((int)processId);
-            return string.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(process.ProcessName, "dopus", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
             return false;
         }
+    }
+
+    private static string? TryGetDirectoryOpusPath(IntPtr hwnd)
+    {
+        _ = GetWindowThreadProcessId(hwnd, out var processId);
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            if (!string.Equals(process.ProcessName, "dopus", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        var title = GetWindowTitle(hwnd);
+        if (Directory.Exists(title))
+        {
+            return title;
+        }
+
+        return GetDirectoryOpusActivePath();
+    }
+
+    private static string? GetDirectoryOpusSelectedPath()
+    {
+        RefreshDirectoryOpusCache();
+        lock (DirectoryOpusCacheLock)
+        {
+            return _directoryOpusCachedSelectedPath;
+        }
+    }
+
+    private static string? GetDirectoryOpusActivePath()
+    {
+        RefreshDirectoryOpusCache();
+        lock (DirectoryOpusCacheLock)
+        {
+            return _directoryOpusCachedActivePath;
+        }
+    }
+
+    private static void RefreshDirectoryOpusCache()
+    {
+        lock (DirectoryOpusCacheLock)
+        {
+            if (_directoryOpusCacheRefreshing ||
+                DateTimeOffset.Now - _directoryOpusCacheUpdatedAt < TimeSpan.FromSeconds(5))
+            {
+                return;
+            }
+
+            _directoryOpusCacheRefreshing = true;
+        }
+
+        _ = Task.Run(() =>
+        {
+            string? selectedPath = null;
+            string? activePath = null;
+
+            try
+            {
+                var selectedDocument = RunDirectoryOpusInfo("listsel");
+                selectedPath = selectedDocument?
+                    .Descendants("item")
+                    .Select(element => element.Attribute("path")?.Value)
+                    .FirstOrDefault(IsExistingFileSystemPath);
+
+                activePath = selectedDocument?
+                    .Descendants("items")
+                    .Select(element => element.Attribute("path")?.Value ?? element.Attribute("display_path")?.Value)
+                    .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path));
+
+                if (activePath is null)
+                {
+                    var pathsDocument = RunDirectoryOpusInfo("paths");
+                    activePath = pathsDocument?
+                        .Descendants("path")
+                        .Where(element => string.Equals(element.Attribute("active_lister")?.Value, "1", StringComparison.OrdinalIgnoreCase) &&
+                                          string.Equals(element.Attribute("active_tab")?.Value, "1", StringComparison.OrdinalIgnoreCase))
+                        .Select(element => element.Value)
+                        .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path));
+                }
+            }
+            finally
+            {
+                lock (DirectoryOpusCacheLock)
+                {
+                    _directoryOpusCachedSelectedPath = selectedPath;
+                    _directoryOpusCachedActivePath = activePath;
+                    _directoryOpusCacheUpdatedAt = DateTimeOffset.Now;
+                    _directoryOpusCacheRefreshing = false;
+                }
+            }
+        });
+    }
+
+    private static XDocument? RunDirectoryOpusInfo(string command)
+    {
+        var dopusRtPath = FindDirectoryOpusRuntime();
+        if (dopusRtPath is null)
+        {
+            return null;
+        }
+
+        var outputPath = Path.Combine(Path.GetTempPath(), $"SvnFloatingAssistant_DOpus_{Guid.NewGuid():N}.xml");
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = dopusRtPath,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            startInfo.ArgumentList.Add("/info");
+            startInfo.ArgumentList.Add($"{outputPath},{command}");
+
+            using var process = Process.Start(startInfo);
+
+            if (process is null)
+            {
+                return null;
+            }
+
+            if (!process.WaitForExit(6000) || !File.Exists(outputPath))
+            {
+                return null;
+            }
+
+            return XDocument.Load(outputPath);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            try { File.Delete(outputPath); } catch { }
+        }
+    }
+
+    private static string? FindDirectoryOpusRuntime()
+    {
+        try
+        {
+            var processPath = Process
+                .GetProcessesByName("dopusrt")
+                .Select(process =>
+                {
+                    try { return process.MainModule?.FileName; } catch { return null; }
+                })
+                .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+
+            if (processPath is not null)
+            {
+                return processPath;
+            }
+        }
+        catch { }
+
+        var candidates = new[]
+        {
+            @"C:\Program Files\GPSoftware\Directory Opus\dopusrt.exe",
+            @"C:\Program Files (x86)\GPSoftware\Directory Opus\dopusrt.exe",
+            @"E:\迅雷\Directory Opus\dopusrt.exe"
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     /// <summary>
