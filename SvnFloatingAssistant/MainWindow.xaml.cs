@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Application = System.Windows.Application;
 using Window = System.Windows.Window;
@@ -77,6 +78,8 @@ public partial class MainWindow : Window
     {
         // 初始位置：右边缘
         _isSnappedRight = true;
+        _isPinned = Topmost;
+        UpdatePinButtonState();
         Left = SystemParameters.WorkArea.Right - Width;
         Top = SystemParameters.WorkArea.Top + 120;
 
@@ -145,9 +148,18 @@ public partial class MainWindow : Window
     private void PinButton_Click(object sender, RoutedEventArgs e)
     {
         _isPinned = !_isPinned;
-        // PinButton.Content = _isPinned ? "📌" : "📍";
-        // 简化：切换 Topmost
         Topmost = _isPinned;
+        UpdatePinButtonState();
+    }
+
+    private void UpdatePinButtonState()
+    {
+        PinButton.Content = _isPinned ? "📌" : "📍";
+        PinButton.ToolTip = _isPinned ? "已置顶，点击取消置顶" : "未置顶，点击置顶";
+        PinButton.Opacity = _isPinned ? 1.0 : 0.55;
+        PinButton.Background = _isPinned
+            ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 255, 255, 255))
+            : System.Windows.Media.Brushes.Transparent;
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
