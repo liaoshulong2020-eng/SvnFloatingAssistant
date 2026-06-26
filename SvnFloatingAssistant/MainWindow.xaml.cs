@@ -343,19 +343,48 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
 
+    /// <summary>在内存中生成 16x16 SVN 图标，避免文件格式兼容问题。</summary>
+    private static System.Drawing.Icon CreateSvnIcon()
+    {
+        var bmp = new System.Drawing.Bitmap(16, 16);
+        using var g = System.Drawing.Graphics.FromImage(bmp);
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+        // 蓝色圆角背景
+        using var path = new System.Drawing.Drawing2D.GraphicsPath();
+        int r = 3;
+        path.AddArc(0, 0, r*2, r*2, 180, 90);
+        path.AddArc(16-r*2, 0, r*2, r*2, 270, 90);
+        path.AddArc(16-r*2, 16-r*2, r*2, r*2, 0, 90);
+        path.AddArc(0, 16-r*2, r*2, r*2, 90, 90);
+        path.CloseFigure();
+        using var blue = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(24, 95, 165));
+        g.FillPath(blue, path);
+
+        // 白色 "S" 文字
+        using var font = new System.Drawing.Font("Arial", 9, System.Drawing.FontStyle.Bold);
+        using var fmt = new System.Drawing.StringFormat();
+        fmt.Alignment = System.Drawing.StringAlignment.Center;
+        fmt.LineAlignment = System.Drawing.StringAlignment.Center;
+        using var white = new System.Drawing.SolidBrush(System.Drawing.Color.White);
+        g.DrawString("S", font, white, 8, 8, fmt);
+
+        var icon = System.Drawing.Icon.FromHandle(bmp.GetHicon());
+        return icon;
+    }
+
     // ═══════════════════════════════════════════════════
     //  系统托盘
     // ═══════════════════════════════════════════════════
 
     private void InitTrayIcon()
     {
-        // 从文件路径提取图标（如果 System.Drawing 不可用则跳过）
+        // 在内存中生成图标，避免 ICO 文件格式兼容问题
         System.Drawing.Icon? appIcon = null;
         try
         {
-            var location = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            if (!string.IsNullOrWhiteSpace(location))
-                appIcon = System.Drawing.Icon.ExtractAssociatedIcon(location);
+            appIcon = CreateSvnIcon();
         }
         catch { }
 
