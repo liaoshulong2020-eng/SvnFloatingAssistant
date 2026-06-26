@@ -16,17 +16,17 @@ public sealed class ExplorerPathMonitor
     /// </summary>
     public string? GetCurrentExplorerPath()
     {
-        var foreground = GetForegroundWindow();
-        if (foreground == IntPtr.Zero) return null;
-
-        _ = GetWindowThreadProcessId(foreground, out var processId);
-        try
+        var explorerWindow = GetExplorerWindowUnderCursor();
+        var fallbackWindow = GetForegroundWindow();
+        if (explorerWindow == IntPtr.Zero && IsExplorerWindow(fallbackWindow))
         {
-            using var process = Process.GetProcessById((int)processId);
-            if (!string.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase))
-                return GetTitlePath(foreground);
+            explorerWindow = fallbackWindow;
         }
-        catch { return null; }
+
+        if (explorerWindow == IntPtr.Zero)
+        {
+            return fallbackWindow == IntPtr.Zero ? null : GetTitlePath(fallbackWindow);
+        }
 
         // 通过 Shell COM 获取 Explorer 信息
         var shellType = Type.GetTypeFromProgID("Shell.Application");
@@ -39,7 +39,7 @@ public sealed class ExplorerPathMonitor
             {
                 try
                 {
-                    if (new IntPtr(Convert.ToInt64(window.HWND)) != foreground) continue;
+                    if (new IntPtr(Convert.ToInt64(window.HWND)) != explorerWindow) continue;
 
                     string currentPath = "";
                     try
@@ -49,7 +49,7 @@ public sealed class ExplorerPathMonitor
                     }
                     catch { }
 
-                    var hoveredPath = GetHoveredItemPath(currentPath, foreground);
+                    var hoveredPath = GetHoveredItemPath(currentPath, explorerWindow);
                     if (hoveredPath is not null)
                     {
                         return hoveredPath;
@@ -92,6 +92,47 @@ public sealed class ExplorerPathMonitor
         catch { }
 
         return null;
+    }
+
+    private static IntPtr GetExplorerWindowUnderCursor()
+    {
+        if (!GetCursorPos(out var cursor))
+        {
+            return IntPtr.Zero;
+        }
+
+        var window = WindowFromPoint(cursor);
+        if (window == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        var root = GetAncestor(window, 2);
+        if (root == IntPtr.Zero)
+        {
+            root = window;
+        }
+
+        return IsExplorerWindow(root) ? root : IntPtr.Zero;
+    }
+
+    private static bool IsExplorerWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        _ = GetWindowThreadProcessId(hwnd, out var processId);
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return string.Equals(process.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -171,17 +212,36 @@ public sealed class ExplorerPathMonitor
             return null;
         }
 
-        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        var normalized = childName.Trim();
+        if (CanBeFileName(normalized))
         {
-            if (childName.Contains(invalidChar))
+            var exact = Path.Combine(directory, normalized);
+            if (IsExistingFileSystemPath(exact))
             {
-                return null;
+                return exact;
             }
         }
 
-        var candidate = Path.Combine(directory, childName);
-        return IsExistingFileSystemPath(candidate) ? candidate : null;
+        try
+        {
+            return Directory
+                .EnumerateFileSystemEntries(directory)
+                .Select(path => new { Path = path, Name = Path.GetFileName(path) })
+                .Where(entry => !string.IsNullOrWhiteSpace(entry.Name) &&
+                                normalized.Contains(entry.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(entry => entry.Name.Length)
+                .Select(entry => entry.Path)
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
     }
+
+    private static bool CanBeFileName(string text) =>
+        !string.IsNullOrWhiteSpace(text) &&
+        text.IndexOfAny(Path.GetInvalidFileNameChars()) < 0;
 
     private static string? NormalizeShellPath(string? path)
     {
@@ -209,6 +269,12 @@ public sealed class ExplorerPathMonitor
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hWnd, uint gaFlags);
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
