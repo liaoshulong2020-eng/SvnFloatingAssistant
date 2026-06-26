@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Windows.Automation;
+using WpfPoint = System.Windows.Point;
 
 namespace SvnFloatingAssistant.Services;
 
@@ -46,6 +48,12 @@ public sealed class ExplorerPathMonitor
                         currentPath = ConvertFileUrlToPath(url) ?? "";
                     }
                     catch { }
+
+                    var hoveredPath = GetHoveredItemPath(currentPath, foreground);
+                    if (hoveredPath is not null)
+                    {
+                        return hoveredPath;
+                    }
 
                     // 优先获取单个选中项，用选中项自己的 SVN 信息做预览。
                     try
@@ -111,6 +119,70 @@ public sealed class ExplorerPathMonitor
         return builder.ToString().Trim();
     }
 
+    private static string? GetHoveredItemPath(string currentDirectory, IntPtr foreground)
+    {
+        if (string.IsNullOrWhiteSpace(currentDirectory) || !Directory.Exists(currentDirectory))
+        {
+            return null;
+        }
+
+        if (!GetCursorPos(out var cursor) || !GetWindowRect(foreground, out var rect))
+        {
+            return null;
+        }
+
+        if (cursor.X < rect.Left || cursor.X > rect.Right || cursor.Y < rect.Top || cursor.Y > rect.Bottom)
+        {
+            return null;
+        }
+
+        try
+        {
+            var element = AutomationElement.FromPoint(new WpfPoint(cursor.X, cursor.Y));
+            for (var depth = 0; element is not null && depth < 8; depth++)
+            {
+                var controlType = element.Current.ControlType;
+                if (controlType == ControlType.ListItem ||
+                    controlType == ControlType.DataItem ||
+                    controlType == ControlType.TreeItem)
+                {
+                    var candidate = ResolveChildPath(currentDirectory, element.Current.Name);
+                    if (candidate is not null)
+                    {
+                        return candidate;
+                    }
+                }
+
+                element = TreeWalker.ControlViewWalker.GetParent(element);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    private static string? ResolveChildPath(string directory, string? childName)
+    {
+        if (string.IsNullOrWhiteSpace(childName))
+        {
+            return null;
+        }
+
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        {
+            if (childName.Contains(invalidChar))
+            {
+                return null;
+            }
+        }
+
+        var candidate = Path.Combine(directory, childName);
+        return IsExistingFileSystemPath(candidate) ? candidate : null;
+    }
+
     private static string? NormalizeShellPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path)) return null;
@@ -136,6 +208,12 @@ public sealed class ExplorerPathMonitor
     private static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
+
+    [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -143,4 +221,20 @@ public sealed class ExplorerPathMonitor
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct Point
+    {
+        public readonly int X;
+        public readonly int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct Rect
+    {
+        public readonly int Left;
+        public readonly int Top;
+        public readonly int Right;
+        public readonly int Bottom;
+    }
 }
