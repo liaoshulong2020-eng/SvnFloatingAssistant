@@ -10,6 +10,7 @@ using Window = System.Windows.Window;
 using SvnFloatingAssistant.Models;
 using SvnFloatingAssistant.Services;
 using SvnFloatingAssistant.ViewModels;
+using WpfButton = System.Windows.Controls.Button;
 
 namespace SvnFloatingAssistant;
 
@@ -89,6 +90,11 @@ public partial class MainWindow : Window
 
     private void TitleBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (FindVisualParent<WpfButton>(e.OriginalSource as DependencyObject) is not null)
+        {
+            return;
+        }
+
         if (e.ChangedButton == MouseButton.Left)
         {
             DragMove();
@@ -155,11 +161,23 @@ public partial class MainWindow : Window
     private void UpdatePinButtonState()
     {
         PinButton.Content = _isPinned ? "📌" : "📍";
+        PinButton.Tag = _isPinned ? "Pinned" : "Unpinned";
         PinButton.ToolTip = _isPinned ? "已置顶，点击取消置顶" : "未置顶，点击置顶";
-        PinButton.Opacity = _isPinned ? 1.0 : 0.55;
-        PinButton.Background = _isPinned
-            ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(80, 255, 255, 255))
-            : System.Windows.Media.Brushes.Transparent;
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T target)
+            {
+                return target;
+            }
+
+            child = VisualTreeHelper.GetParent(child);
+        }
+
+        return null;
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)

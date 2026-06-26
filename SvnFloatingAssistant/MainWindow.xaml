@@ -68,6 +68,19 @@
             </Setter>
         </Style>
 
+        <Style x:Key="PinToolButton" TargetType="Button" BasedOn="{StaticResource ToolButton}">
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Opacity" Value="0.55" />
+            <Setter Property="ToolTip" Value="未置顶，点击置顶" />
+            <Style.Triggers>
+                <Trigger Property="Tag" Value="Pinned">
+                    <Setter Property="Opacity" Value="1" />
+                    <Setter Property="Background" Value="#66FFFFFF" />
+                    <Setter Property="ToolTip" Value="已置顶，点击取消置顶" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- 操作按钮样式 -->
         <Style x:Key="ActionButton" TargetType="Button">
             <Setter Property="Height" Value="30" />
@@ -164,7 +177,7 @@
                                 VerticalAlignment="Center"
                                 Orientation="Horizontal">
                         <Button Content="⟳" Style="{StaticResource ToolButton}" Click="RefreshMenu_Click" />
-                        <Button x:Name="PinButton" Content="📌" Style="{StaticResource ToolButton}" Click="PinButton_Click" />
+                        <Button x:Name="PinButton" Content="📍" Tag="Unpinned" Style="{StaticResource PinToolButton}" Click="PinButton_Click" />
                         <Button Content="🗕" Style="{StaticResource ToolButton}" Click="MinimizeButton_Click" />
                     </StackPanel>
                 </Grid>
